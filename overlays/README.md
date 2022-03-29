@@ -14,6 +14,10 @@ is just "get a class's grandparents", and also the "python code"
 we analyze doesn't use qualifiers but rather fully qualified names
 so that we don't need any semantic analysis in our toy.
 
+It is also simplified by the fact that dependencies only ever point
+up one layer; this makes the python code simpler but doesn't really
+affect validity for the present purposes.
+
 The toy implementations are:
 - `basic.py`: a nice idiomatic python representation of our
   env stack, with mutable updates and a dependency tree. Note
