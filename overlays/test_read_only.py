@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from existing import create_env_stack
+from read_only import create_env_stack
 
 
 def test_env_stack():
@@ -19,8 +19,17 @@ def test_env_stack():
             class W(b.Z): pass
         """,
     })
-    assert class_grandparents_env.get("b.Z", "") == []
-    assert class_grandparents_env.get("b.W", "") == ["a.X"]
+    try:
+        assert class_grandparents_env.get("b.Z", "") == []
+        assert class_grandparents_env.get("b.W", "") == ["a.X"]
+    except Exception:
+        import pdb;
+        import traceback
+        import sys
+
+        traceback.print_exc()
+        _, _, tb = sys.exc_info()
+        pdb.post_mortem(tb)
 
     class_grandparents_env.update("b", code="""
         class Z(a.Y): pass
