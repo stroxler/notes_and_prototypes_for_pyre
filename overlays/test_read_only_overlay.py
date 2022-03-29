@@ -85,3 +85,17 @@ def test_overlay():
     # the original env should still work
     assert class_grandparents_env.get("b.Z", "") == []
     assert class_grandparents_env.get("b.W", "") == ["a.X"]
+
+
+    # Change and save module `a`.
+    class_grandparents_env.update("a", code="""
+        class X(a.Y): pass
+        class Y: pass
+    """)
+
+    # The overlay reflects the newly-saved contents of `a`.
+    assert class_grandparents_env.get("b.Z", "") == ["a.Y"]
+    assert class_grandparents_env.get("b.W", "") == ["a.X"]
+
+    assert class_grandparents_overlay_get("b.Z", "") == []
+    assert class_grandparents_overlay_get("b.W", "") == ["a.Y"]
