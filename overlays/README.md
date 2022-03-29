@@ -37,3 +37,9 @@ The toy implementations are:
   when writing our `get` function if we wanted in-overlay caching;
   what we *can't* do easily is get push-based updates from this
   design, the overlay always has to be recomputed from the parent.
+
+
+Dependencies are in a requirements file. To run tests:
+```
+py.test
+```
