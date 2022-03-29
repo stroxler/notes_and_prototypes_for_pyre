@@ -19,17 +19,8 @@ def test_env_stack():
             class W(b.Z): pass
         """,
     })
-    try:
-        assert class_grandparents_env.get("b.Z", "") == []
-        assert class_grandparents_env.get("b.W", "") == ["a.X"]
-    except Exception:
-        import pdb;
-        import traceback
-        import sys
-
-        traceback.print_exc()
-        _, _, tb = sys.exc_info()
-        pdb.post_mortem(tb)
+    assert class_grandparents_env.get("b.Z", "") == []
+    assert class_grandparents_env.get("b.W", "") == ["a.X"]
 
     class_grandparents_env.update("b", code="""
         class Z(a.Y): pass
