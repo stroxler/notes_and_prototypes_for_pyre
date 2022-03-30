@@ -1,8 +1,9 @@
 import ast
 import dataclasses
 from typing import (
-    Any, Dict, Generic, Protocol, Set, Tuple, TypeVar, List, Optional, cast
+    Any, Callable, Dict, Generic, Protocol, Set, Tuple, TypeVar, List, Optional, cast
 )
+from abc import abstractmethod
 
 from typing_extensions import TypeAlias
 import textwrap
@@ -17,15 +18,35 @@ class ReadOnlyEnv(Generic[T], Protocol):
         ...
 
 
+class CachedTable(Protocol[T]):
+    def has_key_in_cache(self, key: str) -> bool: ...
+
+    def set_key_in_cache(self, key: str, value: T) -> None: ...
+
+    def look_up_key_in_cache(self, key: str) -> T: ...
+
+class DictionaryCachedTable(Generic[T]):
+    def __init__(self, cached: Dict[str, T]) -> None:
+        self._cached = cached
+
+    def has_key_in_cache(self, key: str) -> bool:
+        return key in self._cached
+
+    def set_key_in_cache(self, key: str, value: T) -> None:
+        self._cached[key] = value
+
+    def look_up_key_in_cache(self, key: str) -> T:
+        return self._cached[key]
+
 class WritableEnv(Generic[T]):
     # It's a pain to type this well so I'll place fast and loose
     # with the types here to avoid an explosion of generics
-    cached: Dict[str, T]  # object is the value type
-    dependencies: Dict[str, Set[object]]  # object is the
+    cached_table: CachedTable[T]
+    dependencies: Dict[str, Set[object]]
     upstream_env: Optional["EnvTable"]
 
-    def __init__(self, cached: Optional[Dict[str, T]] = None) -> None:
-        self.cached = cached if cached is not None else {}
+    def __init__(self, cached_table: Optional[CachedTable[T]] = None) -> None:
+        self.cached_table = cached_table if cached_table is not None else DictionaryCachedTable({})
         self.dependencies = {}
         self.upstream_env = None
 
@@ -54,22 +75,22 @@ class EnvTable(Generic[T]):
 
     def get(self, key: str, dependency: str) -> T:
         self.register_dependency(key, dependency)
-        if key not in self.writable_env.cached:
-            self.writable_env.cached[key] = self.produce_value(
+        if not self.writable_env.cached_table.has_key_in_cache(key):
+            self.writable_env.cached_table.set_key_in_cache(key, self.produce_value(
                 key,
                 self.upstream_get,
-                current_env_getter=self.writable_env.cached.get
-            )
-        return self.writable_env.cached[key]
+                current_env_getter=self.writable_env.cached_table.look_up_key_in_cache
+            ))
+        return self.writable_env.cached_table.look_up_key_in_cache(key)
 
     def update_for_push(self, keys_to_update: Set[str]) -> Set[str]:
         downstream_deps = set()
         for key in keys_to_update:
-            self.writable_env.cached[key] = self.produce_value(
+            self.writable_env.cached_table.set_key_in_cache(key, self.produce_value(
                 key,
                 self.upstream_get,
-                current_env_getter=self.writable_env.cached.get
-            )
+                current_env_getter=self.writable_env.cached_table.look_up_key_in_cache
+            ))
             downstream_deps |= self.writable_env.dependencies.get(key, set())
         return downstream_deps
 
@@ -92,7 +113,7 @@ Code: TypeAlias = str
 class WritableCodeEnv(WritableEnv[Code]):
     """A singleton code environment. This mimics how our shared-memory tables are singletons."""
 
-    codes: Dict[Module, Code] = {}
+    codes: CachedTable[Code] = DictionaryCachedTable({})
     _writable_code_env: "Optional[WritableEnv[Code]]" = None
 
     @staticmethod
@@ -100,11 +121,11 @@ class WritableCodeEnv(WritableEnv[Code]):
         # Steven: This is silly, but it kind of mimics why our ocaml codebase cannot easily
         # do overlays - use a global rather than a first-class value to store code.
         # This will force us to do gymnastics in the overlay!
-        WritableCodeEnv.codes = codes
+        WritableCodeEnv.codes = DictionaryCachedTable(codes)
 
         # Pradeep: Making this a singleton should preserve the above constraint.
         if WritableCodeEnv._writable_code_env is None:
-            WritableCodeEnv._writable_code_env = WritableEnv[Code](cached=WritableCodeEnv.codes)
+            WritableCodeEnv._writable_code_env = WritableEnv[Code](cached_table=WritableCodeEnv.codes)
 
         # pyre-ignore[7]: Expected `None` but got `Optional[WritableEnv[str]]`.]
         return WritableCodeEnv._writable_code_env
@@ -126,7 +147,7 @@ class CodeEnv(EnvTable[Code]):
         # `CodeEnv` does not have an upstream environment. So, we have to
         # override the default `update` method to set the value before we
         # "produce" it. (This is what `basic.py` does too.)
-        self.writable_env.cached[module] = code
+        self.writable_env.cached_table.set_key_in_cache(module, code)
         return cast(Set[str], self.writable_env.dependencies[module])
 
 
