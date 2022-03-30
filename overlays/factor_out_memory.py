@@ -44,7 +44,7 @@ class EnvTable(Generic[T]):
             return self.writable_env.upstream_env.read_only()
 
     @staticmethod
-    def produce_value(key: str, upstream_get: Any) -> T:
+    def produce_value(key: str, upstream_get: Any, current_env_getter: Any) -> T:
         "Must be implemented by child environments"
         raise NotImplementedError()
 
@@ -58,13 +58,18 @@ class EnvTable(Generic[T]):
             self.writable_env.cached[key] = self.produce_value(
                 key,
                 self.upstream_get,
+                current_env_getter=self.writable_env.cached.get
             )
         return self.writable_env.cached[key]
 
     def update_for_push(self, keys_to_update: Set[str]) -> Set[str]:
         downstream_deps = set()
         for key in keys_to_update:
-            self.writable_env.cached[key] = self.produce_value(key, self.upstream_get)
+            self.writable_env.cached[key] = self.produce_value(
+                key,
+                self.upstream_get,
+                current_env_getter=self.writable_env.cached.get
+            )
             downstream_deps |= self.writable_env.dependencies.get(key, set())
         return downstream_deps
 
@@ -110,8 +115,8 @@ class CodeEnv(EnvTable[Code]):
         super().__init__(WritableCodeEnv.get_env(codes))
 
     @staticmethod
-    def produce_value(key: Module, upstream_get: Any) -> Code:
-        return WritableCodeEnv.codes[key]
+    def produce_value(key: Module, upstream_get: Any, current_env_getter: Any) -> Code:
+        return current_env_getter(key)
 
     def update(self, module: str, code: str) -> Set[str]:
         # `CodeEnv` does not have an upstream environment. So, we have to
@@ -127,7 +132,7 @@ class AstEnv(EnvTable[ast.AST]):
         self.writable_env.upstream_env = upstream_env
 
     @staticmethod
-    def produce_value(key: Module, upstream_get: Any) -> ast.AST:
+    def produce_value(key: Module, upstream_get: Any, current_env_getter: Any) -> ast.AST:
         code = upstream_get(key, dependency=key)
         return ast.parse(textwrap.dedent(code))
 
@@ -143,7 +148,7 @@ class ClassBodyEnv(EnvTable[ast.ClassDef]):
         self.writable_env.upstream_env = upstream_env
 
     @staticmethod
-    def produce_value(key: ClassName, upstream_get: ReadOnlyEnv[ast.AST]):
+    def produce_value(key: ClassName, upstream_get: ReadOnlyEnv[ast.AST], current_env_getter: Any):
         module, relative_name = key.split(".")
         ast_ = upstream_get(key=module, dependency=key)
         # pyre-fixme[16]: `_ast.AST` has no attribute `body`.
@@ -162,7 +167,7 @@ class ClassParentsEnv(EnvTable[ClassAncestors]):
         self.writable_env.upstream_env = upstream_env
 
     @staticmethod
-    def produce_value(key: ClassName, upstream_get: ReadOnlyEnv[ast.ClassDef]):
+    def produce_value(key: ClassName, upstream_get: ReadOnlyEnv[ast.ClassDef], current_env_getter: Any):
         class_def = upstream_get(key, dependency=key)
         return [
             ast.unparse(b)
@@ -176,7 +181,7 @@ class ClassGrandparentsEnv(EnvTable[ClassAncestors]):
         self.writable_env.upstream_env = upstream_env
 
     @staticmethod
-    def produce_value(key: ClassName, upstream_get: ReadOnlyEnv[ClassAncestors]):
+    def produce_value(key: ClassName, upstream_get: ReadOnlyEnv[ClassAncestors], current_env_getter: Any):
         parents = upstream_get(key, dependency=key)
         return [
             grandparent
