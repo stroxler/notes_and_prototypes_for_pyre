@@ -24,8 +24,8 @@ class WritableEnv(Generic[T]):
     dependencies: Dict[str, Set[object]]  # object is the
     upstream_env: Optional["EnvTable"]
 
-    def __init__(self) -> None:
-        self.cached = {}
+    def __init__(self, cached: Optional[Dict[str, T]] = None) -> None:
+        self.cached = cached if cached is not None else {}
         self.dependencies = {}
         self.upstream_env = None
 
@@ -33,8 +33,8 @@ class WritableEnv(Generic[T]):
 class EnvTable(Generic[T]):
     writable_env: WritableEnv[T]
 
-    def __init__(self) -> None:
-        self.writable_env = WritableEnv()
+    def __init__(self, writable_env) -> None:
+        self.writable_env = writable_env
 
     @property
     def upstream_get(self) -> ReadOnlyEnv:
@@ -84,33 +84,50 @@ Module: TypeAlias = str
 Code: TypeAlias = str
 
 
-class CodeEnv(EnvTable[Code]):
-    codes: Dict[Module, Code] = {}
+class WritableCodeEnv(WritableEnv[Code]):
+    """A singleton code environment. This mimics how our shared-memory tables are singletons."""
 
-    def __init__(self, codes: Dict[Module, Code]) -> None:
-        super().__init__()
-        # This is silly, but it kind of mimics why our ocaml codebase cannot easily
-        # do overlays - use a global rather than a first-class value to store code.
-        # This will force us to do gymnastics in the overlay!
-        CodeEnv.codes = codes
+    codes: Dict[Module, Code] = {}
+    _writable_code_env: "Optional[WritableEnv[Code]]" = None
 
     @staticmethod
-    def produce_value(key: Module, upstream_get: Any) -> str:
-        return CodeEnv.codes[key]
+    def get_env(codes: Dict[Module, Code]) -> None:
+        # Steven: This is silly, but it kind of mimics why our ocaml codebase cannot easily
+        # do overlays - use a global rather than a first-class value to store code.
+        # This will force us to do gymnastics in the overlay!
+        WritableCodeEnv.codes = codes
+
+        # Pradeep: Making this a singleton should preserve the above constraint.
+        if WritableCodeEnv._writable_code_env is None:
+            WritableCodeEnv._writable_code_env = WritableEnv[Code](cached=WritableCodeEnv.codes)
+
+        # pyre-ignore[7]: Expected `None` but got `Optional[WritableEnv[str]]`.]
+        return WritableCodeEnv._writable_code_env
+
+class CodeEnv(EnvTable[Code]):
+
+    def __init__(self, codes: Dict[Module, Code]) -> None:
+        super().__init__(WritableCodeEnv.get_env(codes))
+
+    @staticmethod
+    def produce_value(key: Module, upstream_get: Any) -> Code:
+        return WritableCodeEnv.codes[key]
 
     def update(self, module: str, code: str) -> Set[str]:
-        CodeEnv.codes[module] = code
-        self.writable_env.cached[module] = self.produce_value(module, upstream_get=None)
+        # `CodeEnv` does not have an upstream environment. So, we have to
+        # override the default `update` method to set the value before we
+        # "produce" it. (This is what `basic.py` does too.)
+        self.writable_env.cached[module] = code
         return cast(Set[str], self.writable_env.dependencies[module])
 
 
 class AstEnv(EnvTable[ast.AST]):
     def __init__(self, upstream_env: CodeEnv):
-        super().__init__()
+        super().__init__(WritableEnv[ast.AST]())
         self.writable_env.upstream_env = upstream_env
 
     @staticmethod
-    def produce_value(key: Module, upstream_get: ReadOnlyEnv[Code]):
+    def produce_value(key: Module, upstream_get: Any) -> ast.AST:
         code = upstream_get(key, dependency=key)
         return ast.parse(textwrap.dedent(code))
 
@@ -122,7 +139,7 @@ ClassName: TypeAlias = str
 class ClassBodyEnv(EnvTable[ast.ClassDef]):
 
     def __init__(self, upstream_env: AstEnv):
-        super().__init__()
+        super().__init__(WritableEnv[ast.ClassDef]())
         self.writable_env.upstream_env = upstream_env
 
     @staticmethod
@@ -141,7 +158,7 @@ ClassAncestors: TypeAlias = List[str]
 class ClassParentsEnv(EnvTable[ClassAncestors]):
 
     def __init__(self, upstream_env: ClassBodyEnv):
-        super().__init__()
+        super().__init__(WritableEnv[ClassAncestors]())
         self.writable_env.upstream_env = upstream_env
 
     @staticmethod
@@ -155,7 +172,7 @@ class ClassParentsEnv(EnvTable[ClassAncestors]):
 class ClassGrandparentsEnv(EnvTable[ClassAncestors]):
 
     def __init__(self, upstream_env: ClassParentsEnv):
-        super().__init__()
+        super().__init__(WritableEnv[ClassAncestors]())
         self.writable_env.upstream_env = upstream_env
 
     @staticmethod
