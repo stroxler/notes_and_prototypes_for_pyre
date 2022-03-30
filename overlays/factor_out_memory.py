@@ -96,7 +96,7 @@ class WritableCodeEnv(WritableEnv[Code]):
     _writable_code_env: "Optional[WritableEnv[Code]]" = None
 
     @staticmethod
-    def get_env(codes: Dict[Module, Code]) -> None:
+    def get_env(codes: Dict[Module, Code]) -> WritableEnv[Code]:
         # Steven: This is silly, but it kind of mimics why our ocaml codebase cannot easily
         # do overlays - use a global rather than a first-class value to store code.
         # This will force us to do gymnastics in the overlay!
@@ -111,8 +111,8 @@ class WritableCodeEnv(WritableEnv[Code]):
 
 class CodeEnv(EnvTable[Code]):
 
-    def __init__(self, codes: Dict[Module, Code]) -> None:
-        super().__init__(WritableCodeEnv.get_env(codes))
+    def __init__(self, writable_env: WritableEnv[Code]) -> None:
+        super().__init__(writable_env)
 
     @staticmethod
     def produce_value(key: Module, upstream_get: Any, current_env_getter: Any) -> Code:
@@ -198,7 +198,7 @@ def create_env_stack(code: Dict[str, str]) -> Tuple[
     ClassParentsEnv,
     ClassGrandparentsEnv,
 ]:
-    code_env = CodeEnv(code)
+    code_env = CodeEnv(writable_env=WritableCodeEnv.get_env(code))
     ast_env = AstEnv(code_env)
     class_body_env = ClassBodyEnv(ast_env)
     class_parents_env = ClassParentsEnv(class_body_env)
