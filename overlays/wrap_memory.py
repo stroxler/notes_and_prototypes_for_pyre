@@ -109,6 +109,10 @@ class WritableCodeEnv(WritableEnv[Code]):
         # pyre-ignore[7]: Expected `None` but got `Optional[WritableEnv[str]]`.]
         return WritableCodeEnv._writable_code_env
 
+    @staticmethod
+    def clear() -> None:
+        WritableCodeEnv._writable_code_env = None
+
 class CodeEnv(EnvTable[Code]):
 
     def __init__(self, writable_env: WritableEnv[Code]) -> None:
@@ -198,6 +202,7 @@ def create_env_stack(code: Dict[str, str]) -> Tuple[
     ClassParentsEnv,
     ClassGrandparentsEnv,
 ]:
+    WritableCodeEnv.clear()
     code_env = CodeEnv(writable_env=WritableCodeEnv.get_env(code))
     ast_env = AstEnv(code_env)
     class_body_env = ClassBodyEnv(ast_env)
