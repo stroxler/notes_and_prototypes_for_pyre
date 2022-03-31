@@ -26,7 +26,7 @@ def test_env_stack():
     class_grandparents_env.update("b", code="""
         class Z(a.Y): pass
         class W(b.Z): pass
-    """)
+    """, is_saved_content=True)
     assert class_grandparents_env.get("b.Z", "") == ["a.X"]
     assert class_grandparents_env.get("b.W", "") == ["a.Y"]
 
@@ -89,7 +89,7 @@ def test_with_wrapped_cache_table() -> None:
     wrapped_class_grandparents_env.update("b", code= """
         class Z(a.Y): pass
         class W(b.Z): pass
-    """)
+    """, is_saved_content=False)
 
     assert class_grandparents_env.get("b.Z", "") == []
     assert class_grandparents_env.get("b.W", "") == ["a.X"]
@@ -102,7 +102,7 @@ def test_with_wrapped_cache_table() -> None:
         class Z: pass
         class ZChild(b.Z): pass
         class W(b.ZChild): pass
-    """)
+    """, is_saved_content=False)
 
     assert class_grandparents_env.get("b.Z", "") == []
     assert class_grandparents_env.get("b.W", "") == ["a.X"]
@@ -142,7 +142,7 @@ def test_save_other_file() -> None:
     wrapped_class_grandparents_env.update("b", code= """
         class Z(a.Y): pass
         class W(b.Z): pass
-    """)
+    """, is_saved_content=False)
 
     assert class_grandparents_env.get("b.Z", "") == []
     assert class_grandparents_env.get("b.W", "") == ["a.X"]
@@ -154,7 +154,7 @@ def test_save_other_file() -> None:
     wrapped_class_grandparents_env.update("a", code="""
         class X(a.Y): pass
         class Y: pass
-    """)
+    """, is_saved_content=True)
 
     # The wrapped environment reflects the newly-saved contents of `a`.
     assert wrapped_class_grandparents_env.get("b.Z", "") == []
@@ -197,7 +197,7 @@ def test_reflect_changes_in_brand_new_dependents() -> None:
     wrapped_class_grandparents_env.update("b", code= """
         class Z(c.BrandNewDependent): pass
         class W(b.Z): pass
-    """)
+    """, is_saved_content=False)
 
     assert wrapped_class_grandparents_env.get("b.Z", "") == []
     assert wrapped_class_grandparents_env.get("b.W", "") == ["c.BrandNewDependent"]
@@ -205,10 +205,53 @@ def test_reflect_changes_in_brand_new_dependents() -> None:
     # Change and save module `c`.
     wrapped_class_grandparents_env.update("c", code="""
         class BrandNewDependent(a.X): pass
-    """)
+    """, is_saved_content=True)
 
     # The wrapped environment reflects the change in `BrandNewDependent` even
     # though the saved version of `b` didn't have BrandNewDependent as a
     # dependent.
     assert wrapped_class_grandparents_env.get("b.Z", "") == ["a.X"]
     assert wrapped_class_grandparents_env.get("b.W", "") == ["c.BrandNewDependent"]
+
+
+def test_do_not_update_other_dependencies() -> None:
+    (
+        code_env,
+        ast_env,
+        class_body_env,
+        class_parents_env,
+        class_grandparents_env
+    ) = create_env_stack(code={
+        "a": """
+            class X: pass
+            class Y(a.X): pass
+        """,
+        "b": """
+            class Z(a.X): pass
+            class W(b.Z): pass
+        """,
+        "c": """
+            class ZChild(b.Z): pass
+        """,
+    })
+
+
+    # Do a couple of `get`s so that dependencies are set. Our toy program
+    # crashes if dependencies are not found for a module.
+    assert class_grandparents_env.get("b.Z", "") == []
+    assert class_grandparents_env.get("b.W", "") == ["a.X"]
+    assert class_grandparents_env.get("c.ZChild", "") == ["a.X"]
+
+    wrapped_class_grandparents_env = class_grandparents_env.with_wrapped_cache_table(overridden_module="b")
+
+    # Edit 1.
+    wrapped_class_grandparents_env.update("b", code= """
+        class Z(a.Y): pass
+        class W(b.Z): pass
+    """, is_saved_content=False)
+
+    assert class_grandparents_env.get("b.Z", "") == []
+    assert class_grandparents_env.get("b.W", "") == ["a.X"]
+    # Dependency ZChild should not be updated. It should reflect the saved
+    # contents of `b`.
+    assert class_grandparents_env.get("c.ZChild", "") == ["a.X"]

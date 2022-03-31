@@ -25,6 +25,8 @@ class CachedTable(Protocol[T]):
 
     def look_up_key_in_cache(self, key: str) -> T: ...
 
+    def can_update_key(self, key: str) -> bool: ...
+
 @dataclasses.dataclass
 class DictionaryCachedTable(Generic[T]):
     _cached: Dict[str, T]
@@ -37,6 +39,9 @@ class DictionaryCachedTable(Generic[T]):
 
     def look_up_key_in_cache(self, key: str) -> T:
         return self._cached[key]
+
+    def can_update_key(self, key: str) -> bool:
+        return True
 
 @dataclasses.dataclass
 class WrappedCacheTable(Generic[T]):
@@ -58,6 +63,9 @@ class WrappedCacheTable(Generic[T]):
     def look_up_key_in_cache(self, key: str) -> T:
         """This replaces the exception-raising lookup: `d[key]`."""
         return self.cache_table(key).look_up_key_in_cache(key)
+
+    def can_update_key(self, key: str) -> bool:
+        return key.startswith(self.overridden_module)
 
 @dataclasses.dataclass
 class WritableEnv(Generic[T]):
@@ -108,23 +116,30 @@ class EnvTable(Generic[T]):
             ))
         return self.writable_env.cached_table.look_up_key_in_cache(key)
 
-    def update_for_push(self, keys_to_update: Set[str]) -> Set[str]:
+    def update_for_push(self, keys_to_update: Set[str], is_saved_content: bool) -> Set[str]:
         downstream_deps = set()
         for key in keys_to_update:
-            self.writable_env.cached_table.set_key_in_cache(key, self.produce_value(
-                key,
-                self.upstream_get,
-                current_env_getter=self.writable_env.cached_table.look_up_key_in_cache
-            ))
-            downstream_deps |= self.writable_env.dependencies.get(key, set())
+            # 1. If this is an update for a saved file, then update the key
+            # regardless of whether it belongs to an unsaved module or a saved
+            # module. Saved contents propagate fully.
+            # 2. If this is an update for an unsaved module, then only update
+            # those keys that can be updated.
+            should_update = is_saved_content or self.writable_env.cached_table.can_update_key(key)
+            if should_update:
+                self.writable_env.cached_table.set_key_in_cache(key, self.produce_value(
+                    key,
+                    self.upstream_get,
+                    current_env_getter=self.writable_env.cached_table.look_up_key_in_cache
+                ))
+                downstream_deps |= self.writable_env.dependencies.get(key, set())
         return downstream_deps
 
-    def update(self, module: str, code: str) -> Set[str]:
+    def update(self, module: str, code: str, is_saved_content: bool) -> Set[str]:
         if self.upstream_env is None:
             raise NotImplementedError()
         else:
-            keys_to_update = self.upstream_env.update(module, code)
-            return self.update_for_push(keys_to_update)
+            keys_to_update = self.upstream_env.update(module, code, is_saved_content)
+            return self.update_for_push(keys_to_update, is_saved_content)
 
     def read_only(self) -> ReadOnlyEnv:
         return self.get
@@ -177,7 +192,12 @@ class CodeEnv(EnvTable[Code]):
     def produce_value(key: Module, upstream_get: Any, current_env_getter: Any) -> Code:
         return current_env_getter(key)
 
-    def update(self, module: str, code: str) -> Set[str]:
+    def update(self, module: str, code: str, is_saved_content: bool) -> Set[str]:
+        # Note: We disregard the value of `is_saved_content` here because,
+        # whether `module` is saved or unsaved, we want to set its contents.
+        # The cache table will decide where to place the contents - either in
+        # the original cache table or the wrapper cache table.
+
         # `CodeEnv` does not have an upstream environment. So, we have to
         # override the default `update` method to set the value before we
         # "produce" it. (This is what `basic.py` does too.)
