@@ -38,6 +38,27 @@ class DictionaryCachedTable(Generic[T]):
     def look_up_key_in_cache(self, key: str) -> T:
         return self._cached[key]
 
+@dataclasses.dataclass
+class WrappedCacheTable(Generic[T]):
+    original_cache_table: CachedTable[T]
+    overridden_module: str
+    overridden_cache_table: CachedTable[T]
+
+    def cache_table(self, key: str) -> CachedTable[T]:
+        # Note: For some environments, the key is the class name. So, use
+        # `startswith` for the sake of the toy project.
+        return self.overridden_cache_table if key.startswith(self.overridden_module) else self.original_cache_table
+
+    def has_key_in_cache(self, key: str) -> bool:
+        return self.cache_table(key).has_key_in_cache(key)
+
+    def set_key_in_cache(self, key: str, value: T) -> None:
+        self.cache_table(key).set_key_in_cache(key, value)
+
+    def look_up_key_in_cache(self, key: str) -> T:
+        """This replaces the exception-raising lookup: `d[key]`."""
+        return self.cache_table(key).look_up_key_in_cache(key)
+
 class WritableEnv(Generic[T]):
     # It's a pain to type this well so I'll place fast and loose
     # with the types here to avoid an explosion of generics
