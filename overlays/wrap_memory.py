@@ -1,7 +1,7 @@
 import ast
 import dataclasses
 from typing import (
-    Any, Callable, Dict, Generic, Protocol, Set, Tuple, TypeVar, List, Optional, cast
+    Any, Callable, Dict, Generic, Literal, Protocol, Set, Tuple, TypeVar, List, Optional, cast
 )
 from abc import abstractmethod
 
@@ -25,9 +25,9 @@ class CachedTable(Protocol[T]):
 
     def look_up_key_in_cache(self, key: str) -> T: ...
 
+@dataclasses.dataclass
 class DictionaryCachedTable(Generic[T]):
-    def __init__(self, cached: Dict[str, T]) -> None:
-        self._cached = cached
+    _cached: Dict[str, T]
 
     def has_key_in_cache(self, key: str) -> bool:
         return key in self._cached
@@ -59,31 +59,26 @@ class WrappedCacheTable(Generic[T]):
         """This replaces the exception-raising lookup: `d[key]`."""
         return self.cache_table(key).look_up_key_in_cache(key)
 
+@dataclasses.dataclass
 class WritableEnv(Generic[T]):
     # It's a pain to type this well so I'll place fast and loose
     # with the types here to avoid an explosion of generics
-    cached_table: CachedTable[T]
-    dependencies: Dict[str, Set[object]]
-    upstream_env: Optional["EnvTable"]
-
-    def __init__(self, cached_table: Optional[CachedTable[T]] = None) -> None:
-        self.cached_table = cached_table if cached_table is not None else DictionaryCachedTable({})
-        self.dependencies = {}
-        self.upstream_env = None
+    cached_table: CachedTable[T] = dataclasses.field(default_factory=lambda: DictionaryCachedTable({}))
+    dependencies: Dict[str, Set[object]] = dataclasses.field(default_factory=dict)
 
 
+
+@dataclasses.dataclass
 class EnvTable(Generic[T]):
     writable_env: WritableEnv[T]
-
-    def __init__(self, writable_env) -> None:
-        self.writable_env = writable_env
+    upstream_env: Optional["EnvTable"] = None
 
     @property
     def upstream_get(self) -> ReadOnlyEnv:
-        if self.writable_env.upstream_env is None:
+        if self.upstream_env is None:
             return ...  # typing this correctly is annoying and not illuminating
         else:
-            return self.writable_env.upstream_env.read_only()
+            return self.upstream_env.read_only()
 
     @staticmethod
     def produce_value(key: str, upstream_get: Any, current_env_getter: Any) -> T:
@@ -116,10 +111,10 @@ class EnvTable(Generic[T]):
         return downstream_deps
 
     def update(self, module: str, code: str) -> Set[str]:
-        if self.writable_env.upstream_env is None:
+        if self.upstream_env is None:
             raise NotImplementedError()
         else:
-            keys_to_update = self.writable_env.upstream_env.update(module, code)
+            keys_to_update = self.upstream_env.update(module, code)
             return self.update_for_push(keys_to_update)
 
     def read_only(self) -> ReadOnlyEnv:
@@ -131,6 +126,7 @@ Module: TypeAlias = str
 Code: TypeAlias = str
 
 
+@dataclasses.dataclass
 class WritableCodeEnv(WritableEnv[Code]):
     """A singleton code environment. This mimics how our shared-memory tables are singletons."""
 
@@ -155,10 +151,10 @@ class WritableCodeEnv(WritableEnv[Code]):
     def clear() -> None:
         WritableCodeEnv._writable_code_env = None
 
+@dataclasses.dataclass(init=False)
 class CodeEnv(EnvTable[Code]):
-
-    def __init__(self, writable_env: WritableEnv[Code]) -> None:
-        super().__init__(writable_env)
+    def __init__(self, writable_env: WritableEnv[Code], upstream_env: Literal[None]) -> None:
+        super().__init__(writable_env, upstream_env=upstream_env)
 
     @staticmethod
     def produce_value(key: Module, upstream_get: Any, current_env_getter: Any) -> Code:
@@ -172,10 +168,10 @@ class CodeEnv(EnvTable[Code]):
         return cast(Set[str], self.writable_env.dependencies[module])
 
 
+@dataclasses.dataclass
 class AstEnv(EnvTable[ast.AST]):
-    def __init__(self, upstream_env: CodeEnv):
-        super().__init__(WritableEnv[ast.AST]())
-        self.writable_env.upstream_env = upstream_env
+    def __init__(self, writable_env: WritableEnv[ast.AST], upstream_env: CodeEnv) -> None:
+        super().__init__(writable_env, upstream_env)
 
     @staticmethod
     def produce_value(key: Module, upstream_get: Any, current_env_getter: Any) -> ast.AST:
@@ -187,12 +183,8 @@ class AstEnv(EnvTable[ast.AST]):
 ClassName: TypeAlias = str
 
 
+@dataclasses.dataclass
 class ClassBodyEnv(EnvTable[ast.ClassDef]):
-
-    def __init__(self, upstream_env: AstEnv):
-        super().__init__(WritableEnv[ast.ClassDef]())
-        self.writable_env.upstream_env = upstream_env
-
     @staticmethod
     def produce_value(key: ClassName, upstream_get: ReadOnlyEnv[ast.AST], current_env_getter: Any):
         module, relative_name = key.split(".")
@@ -206,12 +198,8 @@ class ClassBodyEnv(EnvTable[ast.ClassDef]):
 ClassAncestors: TypeAlias = List[str]
 
 
+@dataclasses.dataclass
 class ClassParentsEnv(EnvTable[ClassAncestors]):
-
-    def __init__(self, upstream_env: ClassBodyEnv):
-        super().__init__(WritableEnv[ClassAncestors]())
-        self.writable_env.upstream_env = upstream_env
-
     @staticmethod
     def produce_value(key: ClassName, upstream_get: ReadOnlyEnv[ast.ClassDef], current_env_getter: Any):
         class_def = upstream_get(key, dependency=key)
@@ -220,12 +208,8 @@ class ClassParentsEnv(EnvTable[ClassAncestors]):
             for b in class_def.bases
         ]
 
+@dataclasses.dataclass
 class ClassGrandparentsEnv(EnvTable[ClassAncestors]):
-
-    def __init__(self, upstream_env: ClassParentsEnv):
-        super().__init__(WritableEnv[ClassAncestors]())
-        self.writable_env.upstream_env = upstream_env
-
     @staticmethod
     def produce_value(key: ClassName, upstream_get: ReadOnlyEnv[ClassAncestors], current_env_getter: Any):
         parents = upstream_get(key, dependency=key)
@@ -245,11 +229,11 @@ def create_env_stack(code: Dict[str, str]) -> Tuple[
     ClassGrandparentsEnv,
 ]:
     WritableCodeEnv.clear()
-    code_env = CodeEnv(writable_env=WritableCodeEnv.get_env(code))
-    ast_env = AstEnv(code_env)
-    class_body_env = ClassBodyEnv(ast_env)
-    class_parents_env = ClassParentsEnv(class_body_env)
-    class_grandparents_env = ClassGrandparentsEnv(class_parents_env)
+    code_env = CodeEnv(writable_env=WritableCodeEnv.get_env(code), upstream_env=None)
+    ast_env = AstEnv(writable_env=WritableEnv[ast.AST](), upstream_env=code_env)
+    class_body_env = ClassBodyEnv(writable_env=WritableEnv[ast.ClassDef](), upstream_env=ast_env)
+    class_parents_env = ClassParentsEnv(writable_env=WritableEnv[ClassAncestors](), upstream_env=class_body_env)
+    class_grandparents_env = ClassGrandparentsEnv(writable_env=WritableEnv[ClassAncestors](), upstream_env=class_parents_env)
     return (
         code_env,
         ast_env,
