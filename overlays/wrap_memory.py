@@ -66,6 +66,15 @@ class WritableEnv(Generic[T]):
     cached_table: CachedTable[T] = dataclasses.field(default_factory=lambda: DictionaryCachedTable({}))
     dependencies: Dict[str, Set[object]] = dataclasses.field(default_factory=dict)
 
+    def with_wrapped_cache_table(self, overridden_module: str) -> "WritableEnv[T]":
+        return dataclasses.replace(
+            self,
+            cached_table=WrappedCacheTable(
+                original_cache_table=self.cached_table,
+                overridden_module=overridden_module,
+                overridden_cache_table=DictionaryCachedTable({}),
+            ),
+        )
 
 
 @dataclasses.dataclass
@@ -119,6 +128,14 @@ class EnvTable(Generic[T]):
 
     def read_only(self) -> ReadOnlyEnv:
         return self.get
+
+    def with_wrapped_cache_table(self, overridden_module: str) -> "EnvTable[T]":
+        wrapped_upstream_env = self.upstream_env.with_wrapped_cache_table(overridden_module) if self.upstream_env is not None else None
+        return dataclasses.replace(
+            self,
+            writable_env=self.writable_env.with_wrapped_cache_table(overridden_module),
+            upstream_env=wrapped_upstream_env,
+        )
 
 
 # "module_name"
