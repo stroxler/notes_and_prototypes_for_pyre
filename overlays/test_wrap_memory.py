@@ -85,8 +85,6 @@ def test_with_wrapped_cache_table() -> None:
     assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=True) == []
     assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=True) == ["a.X"]
 
-    class_grandparents_env.add_unsaved_module_to_all_environments("b")
-
     # Edit 1.
     class_grandparents_env.update("b", code= """
         class Z(a.Y): pass
@@ -146,8 +144,6 @@ def test_save_other_file() -> None:
     assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=True) == []
     assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=True) == ["a.X"]
 
-    class_grandparents_env.add_unsaved_module_to_all_environments("b")
-
     # Edit 1.
     class_grandparents_env.update("b", code= """
         class Z(a.Y): pass
@@ -200,8 +196,6 @@ def test_reflect_changes_in_brand_new_dependents() -> None:
     assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=True) == []
     assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=True) == ["a.X"]
 
-    class_grandparents_env.add_unsaved_module_to_all_environments("b")
-
     # Edit 1.
     class_grandparents_env.update("b", code= """
         class Z(c.BrandNewDependent): pass
@@ -251,8 +245,6 @@ def test_do_not_update_other_dependencies() -> None:
     assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=True) == ["a.X"]
     assert class_grandparents_env.get("c.ZChild", "", use_saved_contents_of_dependents=True) == ["a.X"]
 
-    class_grandparents_env.add_unsaved_module_to_all_environments("b")
-
     # Edit 1.
     class_grandparents_env.update("b", code= """
         class Z(a.Y): pass
@@ -288,8 +280,6 @@ def test_get_uncached_dependent_of_unsaved_file():
     assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=True) == []
     assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=True) == ["a.X"]
 
-    class_grandparents_env.add_unsaved_module_to_all_environments("b")
-
     # Edit 1.
     class_grandparents_env.update("b", code= """
         class Z(a.Y): pass
@@ -304,3 +294,48 @@ def test_get_uncached_dependent_of_unsaved_file():
     # should use their saved-file values, not unsaved-file values.
     assert class_grandparents_env.get("c.ZChild", "", use_saved_contents_of_dependents=True) == ["a.X"]
     assert class_grandparents_env.get("c.ZChild", "", use_saved_contents_of_dependents=False) == ["a.X"]
+
+def test_save_edited_file() -> None:
+    (
+        code_env,
+        ast_env,
+        class_body_env,
+        class_parents_env,
+        class_grandparents_env
+    ) = create_env_stack(code={
+        "a": """
+            class X: pass
+            class Y(a.X): pass
+        """,
+        "b": """
+            class Z(a.X): pass
+            class W(b.Z): pass
+        """,
+    })
+
+
+    # Do a couple of `get`s so that dependencies are set. Our toy program
+    # crashes if dependencies are not found for a module.
+    assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=True) == []
+    assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=True) == ["a.X"]
+
+    # Edit 1.
+    class_grandparents_env.update("b", code= """
+        class Z(a.Y): pass
+        class W(b.Z): pass
+    """, is_saved_content=False)
+
+    assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=True) == []
+    assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=False) == ["a.X"]
+    assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=True) == ["a.X"]
+    assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=False) == ["a.Y"]
+
+    class_grandparents_env.update("b", code="""
+        class Z(b.W): pass
+        class W(a.X): pass
+    """, is_saved_content=True)
+
+    assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=True) == ["a.X"]
+    assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=False) == ["a.X"]
+    assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=True) == []
+    assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=False) == []

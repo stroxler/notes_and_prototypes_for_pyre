@@ -165,6 +165,11 @@ class EnvTable(Generic[T]):
         return downstream_deps
 
     def update(self, module: str, code: str, is_saved_content: bool) -> Set[str]:
+        if is_saved_content:
+            self.writable_env.unsaved_modules.discard(module)
+        else:
+            self.writable_env.unsaved_modules.add(module)
+
         if self.upstream_env is None:
             raise NotImplementedError()
         else:
