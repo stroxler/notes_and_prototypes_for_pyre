@@ -55,16 +55,23 @@ class EnvTable(Generic[T]):
 
     def get(self, key: str, dependency: str, use_saved_contents_of_dependents: bool) -> T:
         self.register_dependency(key, dependency)
-
-        target_cache_table = (self.writable_env.saved_contents_cache_table
-                              if use_saved_contents_of_dependents or module(key) not in self.writable_env.unsaved_modules
-                              else self.writable_env.unsaved_contents_cache_table)
+        use_saved_contents = (
+            use_saved_contents_of_dependents or
+            module(key) not in self.writable_env.unsaved_modules
+        )
+        target_cache_table = (
+            self.writable_env.saved_contents_cache_table
+            if use_saved_contents
+            else self.writable_env.unsaved_contents_cache_table
+        )
         # Update the saved_contents_cache_table whether the module is
         # saved or unsaved.
         if key not in target_cache_table:
             target_cache_table[key] = self.produce_value(
                 key,
-                self.upstream_get(use_saved_contents_of_dependents),
+                self.upstream_get(
+                    use_saved_contents_of_dependents=use_saved_contents
+                ),
                 current_env_getter=target_cache_table.get
             )
 

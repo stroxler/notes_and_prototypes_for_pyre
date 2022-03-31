@@ -314,7 +314,7 @@ def test_save_edited_file() -> None:
 
 
 
-def test_edge_case() -> None:
+def test_edge_case__now_fixed() -> None:
     def set_up():
         (
             code_env,
@@ -346,12 +346,11 @@ def test_edge_case() -> None:
         return class_grandparents_env
 
     class_grandparents_env = set_up()
-    # If the saved key always exists first we are okay, a saved module will use saved
-    # dependencies.
+    # we get the same results...
     assert class_grandparents_env.get("b.B1", "", use_saved_contents_of_dependents=True) == ["a.X"]
     assert class_grandparents_env.get("b.B1", "", use_saved_contents_of_dependents=False) == ["a.X"]
 
     class_grandparents_env = set_up()
-    # But we can contaminate a saved module if we look up a new key in unsaved mode
-    assert class_grandparents_env.get("b.B1", "", use_saved_contents_of_dependents=False) == []
-    assert class_grandparents_env.get("b.B1", "", use_saved_contents_of_dependents=True) == []
+    # ... regardless of the order in which we call `get`
+    assert class_grandparents_env.get("b.B1", "", use_saved_contents_of_dependents=False) == ["a.X"]
+    assert class_grandparents_env.get("b.B1", "", use_saved_contents_of_dependents=True) == ["a.X"]
