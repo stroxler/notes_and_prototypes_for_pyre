@@ -18,17 +18,8 @@ class ReadOnlyEnv(Generic[T], Protocol):
         ...
 
 
-class CachedTable(Protocol[T]):
-    def has_key_in_cache(self, key: str) -> bool: ...
-
-    def set_key_in_cache(self, key: str, value: T) -> None: ...
-
-    def look_up_key_in_cache(self, key: str) -> T: ...
-
-    def can_update_key(self, key: str) -> bool: ...
-
 @dataclasses.dataclass
-class DictionaryCachedTable(Generic[T]):
+class CachedTable(Generic[T]):
     _cached: Dict[str, T]
 
     def has_key_in_cache(self, key: str) -> bool:
@@ -40,39 +31,15 @@ class DictionaryCachedTable(Generic[T]):
     def look_up_key_in_cache(self, key: str) -> T:
         return self._cached[key]
 
-    def can_update_key(self, key: str) -> bool:
-        return True
-
-@dataclasses.dataclass
-class WrappedCacheTable(Generic[T]):
-    original_cache_table: CachedTable[T]
-    overridden_module: str
-    overridden_cache_table: CachedTable[T]
-
-    def cache_table(self, key: str) -> CachedTable[T]:
-        # Note: For some environments, the key is the class name. So, use
-        # `startswith` for the sake of the toy project.
-        return self.overridden_cache_table if key.startswith(self.overridden_module) else self.original_cache_table
-
-    def has_key_in_cache(self, key: str) -> bool:
-        return self.cache_table(key).has_key_in_cache(key)
-
-    def set_key_in_cache(self, key: str, value: T) -> None:
-        self.cache_table(key).set_key_in_cache(key, value)
-
-    def look_up_key_in_cache(self, key: str) -> T:
-        """This replaces the exception-raising lookup: `d[key]`."""
-        return self.cache_table(key).look_up_key_in_cache(key)
-
-    def can_update_key(self, key: str) -> bool:
-        return key.startswith(self.overridden_module)
-
 @dataclasses.dataclass
 class WritableEnv(Generic[T]):
+    # This is only initialized globally. So, it basically stands in for Pyre's shared memory table.
+
+
     # It's a pain to type this well so I'll place fast and loose
     # with the types here to avoid an explosion of generics
-    saved_contents_cache_table: CachedTable[T] = dataclasses.field(default_factory=lambda: DictionaryCachedTable({}))
-    unsaved_contents_cache_table: CachedTable[T] = dataclasses.field(default_factory=lambda: DictionaryCachedTable({}))
+    saved_contents_cache_table: CachedTable[T] = dataclasses.field(default_factory=lambda: CachedTable({}))
+    unsaved_contents_cache_table: CachedTable[T] = dataclasses.field(default_factory=lambda: CachedTable({}))
     unsaved_modules: Set[str] = dataclasses.field(default_factory=set)
     dependencies: Dict[str, Set[object]] = dataclasses.field(default_factory=dict)
 
@@ -194,7 +161,7 @@ Code: TypeAlias = str
 class WritableCodeEnv(WritableEnv[Code]):
     """A singleton code environment. This mimics how our shared-memory tables are singletons."""
 
-    codes: CachedTable[Code] = DictionaryCachedTable({})
+    codes: CachedTable[Code] = CachedTable({})
     _writable_code_env: "Optional[WritableEnv[Code]]" = None
 
     @staticmethod
@@ -202,7 +169,7 @@ class WritableCodeEnv(WritableEnv[Code]):
         # Steven: This is silly, but it kind of mimics why our ocaml codebase cannot easily
         # do overlays - use a global rather than a first-class value to store code.
         # This will force us to do gymnastics in the overlay!
-        WritableCodeEnv.codes = DictionaryCachedTable(codes)
+        WritableCodeEnv.codes = CachedTable(codes)
 
         # Pradeep: Making this a singleton should preserve the above constraint.
         if WritableCodeEnv._writable_code_env is None:
