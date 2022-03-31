@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from wrap_memory import create_env_stack, CachedTable
+from wrap_memory import create_env_stack
 
 
 def test_env_stack():
