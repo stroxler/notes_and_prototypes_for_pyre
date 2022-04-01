@@ -311,3 +311,46 @@ def test_save_edited_file() -> None:
     assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=False) == ["a.X"]
     assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=True) == []
     assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=False) == []
+
+
+
+def test_edge_case__now_fixed() -> None:
+    def set_up():
+        (
+            code_env,
+            ast_env,
+            class_body_env,
+            class_parents_env,
+            class_grandparents_env
+        ) = create_env_stack(code={
+            "a": """
+                class X: pass
+                class Y(a.X): pass
+            """,
+            "b": """
+                class B0(a.X): pass
+                class B1(a.Y): pass
+            """,
+        })
+
+        # create some dependencies; this isn't actually important, it's just needed
+        # because the code isn't very robust
+        class_grandparents_env.get("b.B0", "", use_saved_contents_of_dependents=True)
+
+        # Trigger a pair of updates
+        class_grandparents_env.update("a", code="""
+            class X: pass
+            class Y: pass
+        """, is_saved_content=False)
+
+        return class_grandparents_env
+
+    class_grandparents_env = set_up()
+    # we get the same results...
+    assert class_grandparents_env.get("b.B1", "", use_saved_contents_of_dependents=True) == ["a.X"]
+    assert class_grandparents_env.get("b.B1", "", use_saved_contents_of_dependents=False) == ["a.X"]
+
+    class_grandparents_env = set_up()
+    # ... regardless of the order in which we call `get`
+    assert class_grandparents_env.get("b.B1", "", use_saved_contents_of_dependents=False) == ["a.X"]
+    assert class_grandparents_env.get("b.B1", "", use_saved_contents_of_dependents=True) == ["a.X"]
