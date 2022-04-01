@@ -309,6 +309,8 @@ def test_save_edited_file() -> None:
 
     assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=True) == ["a.X"]
     assert class_grandparents_env.get("b.Z", "", use_saved_contents_of_dependents=False) == ["a.X"]
+    # Note: here saving wipes out the overlay
+    # In wrap_env.py the test has different results because we don't automatically clear overlays.
     assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=True) == []
     assert class_grandparents_env.get("b.W", "", use_saved_contents_of_dependents=False) == []
 
