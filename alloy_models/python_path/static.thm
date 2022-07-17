@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<alloy>
+
+<view nodetheme="Martha">
+
+<defaultnode/>
+
+<defaultedge/>
+
+<node>
+   <type name="AnyPath"/>
+   <type name="Directory"/>
+   <type name="File"/>
+   <type name="Int"/>
+   <type name="univ"/>
+   <type name="seq/Int"/>
+</node>
+
+<node shape="Egg" color="Blue">
+   <type name="RootPath"/>
+</node>
+
+<node shape="Ellipse" color="Yellow">
+   <type name="Path"/>
+</node>
+
+<node visible="no">
+   <type name="Entry"/>
+   <type name="String"/>
+</node>
+
+<node visible="no" shape="Parallelogram" color="Green">
+   <type name="Root"/>
+</node>
+
+<edge layout="yes">
+   <relation name="parent"> <type name="Path"/> <type name="AnyPath"/> </relation>
+</edge>
+
+<edge visible="no" attribute="yes">
+   <relation name="state"> <type name="Path"/> <type name="Root"/> <type name="Entry"/> </relation>
+</edge>
+
+</view>
+
+</alloy>
